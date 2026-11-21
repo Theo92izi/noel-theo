@@ -1,173 +1,150 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createClient } from '@supabase/supabase-js';
-import { Gift, Plus, LogOut, Heart, LockKeyhole, Check, ShoppingBag, Undo2, ExternalLink, Pencil, Trash2, Sparkles, X, Mail, LoaderCircle, AlertCircle, RefreshCcw, Snowflake } from 'lucide-react';
+import { Gift, Plus, LogOut, Heart, LockKeyhole, Check, ShoppingBag, Undo2, ExternalLink, Pencil, Trash2, Sparkles, X, LoaderCircle, AlertCircle, RefreshCcw, Snowflake, PartyPopper } from 'lucide-react';
 import './styles.css';
 
-const URL = import.meta.env.VITE_SUPABASE_URL;
-const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const ready = !!(URL && KEY && !URL.includes('VOTRE-'));
-const db = ready ? createClient(URL, KEY, {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,storageKey:'noel-theo-auth-v1'}}) : null;
-const priorities = [{ value: 'coup_de_coeur', label: 'Coup de cœur' }, { value: 'envie', label: 'Très envie' }, { value: 'idee', label: 'Une idée' }];
-const emptyGift = { title:'',description:'',product_url:'',image_url:'',price_eur:'',priority:'envie' };
-const getError = (e) => e?.message || 'Une erreur est survenue.';
-const norm = (x) => (x || '').toLowerCase();
-function Avatar({ member, size='normal' }) {
-  const [broken,setBroken] = useState(false);
-  useEffect(()=>setBroken(false),[member?.avatar_url]);
-  return <div className={`avatar avatar-${size}`} title={member?.display_name || ''}>{member?.avatar_url && !broken ? <img src={member.avatar_url} onError={()=>setBroken(true)} alt={member.display_name || 'Avatar'}/> : <span>{(member?.display_name || '?').slice(0,1).toUpperCase()}</span>}</div>;
-}
-function Confetti({ pieces }) {
-  if (!pieces.length) return null;
-  return <div className="confetti-layer" aria-hidden="true">{pieces.map(p=><span key={p.id} className="confetti-piece" style={{left:p.left+'%',background:p.color,animationDelay:p.delay+'s',animationDuration:p.duration+'s','--drift':p.drift+'px',borderRadius:p.round?'50%':'2px'}}/>)}</div>;
-}
-function App() {
-  const [session,setSession] = useState(null), [loaded,setLoaded] = useState(false);
-  const [email,setEmail] = useState(''), [sent,setSent] = useState(false), [busy,setBusy] = useState(false);
-  const [profile,setProfile] = useState(null), [members,setMembers] = useState([]);
-  const [gifts,setGifts] = useState([]), [claims,setClaims] = useState([]);
-  const [notice,setNotice] = useState(''), [modal,setModal] = useState(false), [editing,setEditing] = useState(null);
-  const [form,setForm] = useState(emptyGift), [search,setSearch] = useState('');
-  const [filter,setFilter] = useState('all'), [pending,setPending] = useState('');
-  const [purchaseDialog,setPurchaseDialog] = useState(false), [confetti,setConfetti] = useState([]);
-  const [saveBusy,setSaveBusy] = useState(false);
-  const firstPurchaseLoad = React.useRef(false);
-  const confettiTimer = React.useRef(null);
-  useEffect(()=>()=>clearTimeout(confettiTimer.current),[]);
-  function celebrate(){
-    const colors=['#b7504b','#e1b755','#1c6d58','#ef8d83','#eedfae','#ffffff'];
-    setConfetti(Array.from({length:85},(_,i)=>({id:i,left:Math.random()*100,color:colors[i%colors.length],delay:Math.random()*.35,duration:2.1+Math.random()*1.65,drift:-110+Math.random()*220,round:i%3===0})));
-    clearTimeout(confettiTimer.current);
-    confettiTimer.current=setTimeout(()=>setConfetti([]),4300);
-  }
-  const owner = profile?.role === 'owner';
-  const myEmail = norm(session?.user?.email);
-  const claimMap = useMemo(()=>Object.fromEntries(claims.map(c=>[c.gift_id,c])),[claims]);
-  const peopleMap = useMemo(()=>Object.fromEntries(members.map(m=>[m.email,m])),[members]);
-  const toast = (msg)=>setNotice(msg);
+const PROFILES = [
+  {id:'theo',name:'Théo',avatar:'/favicon.png',locked:true},
+  {id:'laurine',name:'Laurine',avatar:'/avatars/laurine.png'},
+  {id:'maman',name:'Christelle',avatar:'/avatars/maman.png'},
+  {id:'dino',name:'Dino',avatar:'/avatars/dino.png'},
+];
+const priorityOptions = [{value:'coup_de_coeur',label:'Coup de cœur'},{value:'envie',label:'Très envie'},{value:'idee',label:'Une idée'}];
+const emptyGift={title:'',description:'',product_url:'',image_url:'',price_eur:'',priority:'envie'};
+const PEOPLE_EMAILS={theo:'theoarnal82@gmail.com',laurine:'laurine.delage531@gmail.com',maman:'mchristellemarty82@gmail.com',dino:'lionel.delage531@orange.fr'};
+const SMALL_ICONS=['🎉','✨','🎊','🎁','⭐','❄️'];
 
-  useEffect(()=>{
-    if (!db) {setLoaded(true);return;}
-    db.auth.getSession().then(({data})=>{setSession(data.session);setLoaded(true);});
-    const {data:{subscription}}=db.auth.onAuthStateChange((_event,newSession)=>{setSession(newSession);});
-    return ()=>subscription.unsubscribe();
-  },[]);
-  useEffect(()=>{
-    if(!notice)return;
-    const id=setTimeout(()=>setNotice(''),5500); return ()=>clearTimeout(id);
-  },[notice]);
-
-  async function refresh(emailArg=myEmail, quiet=false){
-    if(!emailArg||!db)return;
-    const {data:roleData,error:roleError}=await db.rpc('my_christmas_role');
-    if(roleError){if(!quiet)toast(getError(roleError));return;}
-    if(!roleData){setProfile(null);setGifts([]);setClaims([]);return;}
-    const [{data:me},{data:people},{data:items,error:giftErr}] = await Promise.all([
-      db.from('family_members').select('*').eq('email',emailArg).maybeSingle(),
-      db.from('family_members').select('*').order('display_name'),
-      db.from('gifts').select('*').order('created_at',{ascending:false})
-    ]);
-    if(giftErr){if(!quiet)toast(getError(giftErr));return;}
-    setProfile(me || {email:emailArg, role:roleData, display_name:emailArg.split('@')[0]});
-    setMembers(people||[]);setGifts(items||[]);
-    if(roleData==='participant'){
-      const {data, error}=await db.from('gift_claims').select('*');
-      if(error && !quiet)toast(getError(error));
-      if(!error){
-        setClaims(data||[]);
-        if(!firstPurchaseLoad.current){
-          firstPurchaseLoad.current=true;
-          if((data||[]).some(c=>c.status==='purchased'))setPurchaseDialog(true);
-        }
-      }
-    } else setClaims([]);
+async function api(action, data) {
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),15000);
+  try {
+    const response=await fetch(`/api/index?action=${encodeURIComponent(action)}`,{
+      method:data===undefined?'GET':'POST',credentials:'same-origin',
+      headers:data===undefined?{}:{'Content-Type':'application/json'},
+      body:data===undefined?undefined:JSON.stringify(data),signal:ctrl.signal,cache:'no-store'
+    });
+    const payload=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(payload.error||`Erreur HTTP ${response.status}`);
+    return payload;
+  } catch(e){
+    if(e?.name==='AbortError') throw new Error('Connexion trop longue. Vérifie Internet puis réessaie.');
+    throw e;
+  } finally {clearTimeout(timer);}
+}
+function Avatar({person,size='normal'}) {
+  const [bad,setBad]=useState(false);
+  useEffect(()=>setBad(false),[person?.avatar_url,person?.avatar]);
+  const url=person?.avatar_url||person?.avatar;
+  return <div className={`avatar avatar-${size}`}>
+    {url&&!bad?<img src={url} alt={person?.display_name||person?.name||'Avatar'} onError={()=>setBad(true)}/>:<span>{(person?.display_name||person?.name||'?')[0]}</span>}
+  </div>;
+}
+function Confetti({show}){
+  const bits=useMemo(()=>Array.from({length:55},(_,i)=>({x:(i*37+11)%100,delay:(i*41)%800,dur:1900+(i*31)%1400,icon:SMALL_ICONS[i%SMALL_ICONS.length]})),[]);
+  if(!show)return null;
+  return <div className="confetti-layer" aria-hidden="true">{bits.map((b,i)=><span key={i} style={{left:`${b.x}%`,animationDelay:`${b.delay}ms`,animationDuration:`${b.dur}ms`}}>{b.icon}</span>)}</div>;
+}
+function App(){
+  const [profileId,setProfileId]=useState(null),[loaded,setLoaded]=useState(false);
+  const [chosen,setChosen]=useState(null),[pin,setPin]=useState('');
+  const [busy,setBusy]=useState(false),[pending,setPending]=useState(''),[notice,setNotice]=useState('');
+  const [gifts,setGifts]=useState([]),[claims,setClaims]=useState([]),[members,setMembers]=useState([]);
+  const [modal,setModal]=useState(false),[editing,setEditing]=useState(null),[form,setForm]=useState(emptyGift);
+  const [search,setSearch]=useState(''),[filter,setFilter]=useState('all'),[summary,setSummary]=useState(false),[summarySeen,setSummarySeen]=useState(false),[confetti,setConfetti]=useState(false);
+  const owner=profileId==='theo', person=PROFILES.find(p=>p.id===profileId), myEmail=PEOPLE_EMAILS[profileId];
+  const claimMap=useMemo(()=>Object.fromEntries(claims.map(x=>[x.gift_id,x])),[claims]);
+  const peopleMap=useMemo(()=>Object.fromEntries(members.map(m=>[m.email,m])),[members]);
+  const mine=claims.filter(x=>x.buyer_email===myEmail),purchased=claims.filter(x=>x.status==='purchased');
+  const toast=x=>setNotice(x);
+  useEffect(()=>{let active=true; api('session').then(x=>{if(active)setProfileId(x.profile||null)}).catch(e=>{if(active)toast(e.message)}).finally(()=>{if(active)setLoaded(true)});return ()=>{active=false}},[]);
+  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),5500);return ()=>clearTimeout(t)},[notice]);
+  async function refresh(silent=false){
+    try{const data=await api('data');setGifts(data.gifts||[]);setMembers(data.members||[]);setClaims(data.claims||[])}
+    catch(e){if(!silent)toast(e.message)}
   }
   useEffect(()=>{
-    if(!session?.user?.email){setProfile(null);setGifts([]);setClaims([]);firstPurchaseLoad.current=false;setPurchaseDialog(false);return;}
-    refresh(norm(session.user.email));
-    const id=setInterval(()=>refresh(norm(session.user.email),true),5000);
-    const onFocus=()=>refresh(norm(session.user.email),true);
-    window.addEventListener('focus',onFocus);
-    return ()=>{clearInterval(id);window.removeEventListener('focus',onFocus);};
-  },[session?.user?.email]);
-
-  async function sendLogin(e){
-    e.preventDefault();if(busy)return;
+    if(!profileId){setGifts([]);setClaims([]);setMembers([]);setSummarySeen(false);return;}
+    let active=true;
+    const load=async()=>{if(active)await refresh(true)};
+    load();const interval=setInterval(load,7000);
+    const onFocus=()=>load();document.addEventListener('visibilitychange',onFocus);
+    return ()=>{active=false;clearInterval(interval);document.removeEventListener('visibilitychange',onFocus)};
+  },[profileId]);
+  useEffect(()=>{
+    if(!profileId||owner||summarySeen||!members.length)return;
+    setSummarySeen(true);
+    // Show purchased gifts upon returning, but not for a new empty list.
+    if(purchased.length) setSummary(true);
+  },[profileId,owner,summarySeen,members.length,purchased.length]);
+  async function login(id){
+    if(id==='theo'){setChosen(id);setPin('');return;}
     setBusy(true);
-    try {
-      const {error}=await db.auth.signInWithOtp({email:email.trim().toLowerCase(),options:{emailRedirectTo:window.location.origin}});
-      if(error)throw error;
-      setSent(true);
-    } catch(error){toast(getError(error));}
-    finally{setBusy(false);}
+    try{await api('login',{profile:id});setProfileId(id);setChosen(null);setSummarySeen(false)}
+    catch(e){toast(e.message)}finally{setBusy(false)}
   }
-  async function logout(){await db.auth.signOut();setSent(false);setEmail('');firstPurchaseLoad.current=false;}
-  function openAdd(item=null){setEditing(item?.id||null);setForm(item ? {...item,price_eur:item.price_eur??''} : emptyGift);setModal(true);}
+  async function loginOwner(e){
+    e.preventDefault();setBusy(true);
+    try{await api('login',{profile:'theo',pin});setProfileId('theo');setPin('');setChosen(null)}
+    catch(e){toast(e.message)}finally{setBusy(false)}
+  }
+  async function logout(){
+    setBusy(true);try{await api('logout');setProfileId(null);setSummary(false);setSummarySeen(false)}catch(e){toast(e.message)}finally{setBusy(false)}
+  }
+  function openAdd(item){setEditing(item?.id||null);setForm(item?{...item,price_eur:item.price_eur??''}:{...emptyGift});setModal(true)}
   async function saveGift(e){
-    e.preventDefault();if(!owner)return;
-    setSaveBusy(true);
-    const payload={title:form.title.trim(),description:form.description.trim(),product_url:form.product_url.trim()||null,image_url:form.image_url.trim()||null,price_eur:form.price_eur===''?null:Number(form.price_eur),priority:form.priority};
-    try{
-      const {error}=editing?await db.from('gifts').update(payload).eq('id',editing):await db.from('gifts').insert(payload);
-      if(error)throw error;
-      setModal(false);toast(editing?'Cadeau modifié !':'Cadeau ajouté à ta liste !');await refresh();
-    }catch(error){toast(getError(error));}
-    finally{setSaveBusy(false);}
+    e.preventDefault();if(busy)return;setBusy(true);
+    try{await api('gift',{kind:editing?'edit':'add',id:editing,gift:form});setModal(false);toast(editing?'Cadeau mis à jour !':'Cadeau ajouté !');await refresh()}
+    catch(e){toast(e.message)}finally{setBusy(false)}
   }
   async function removeGift(g){
-    if(!owner||!window.confirm(`Supprimer « ${g.title} » ?`))return;
-    setPending(g.id);const {error}=await db.from('gifts').delete().eq('id',g.id);setPending('');
-    if(error)toast(getError(error));else{toast('Cadeau supprimé.');await refresh();}
+    if(!window.confirm(`Supprimer « ${g.title} » ?`))return;
+    setPending(g.id);try{await api('gift',{kind:'delete',id:g.id});toast('Cadeau supprimé.');await refresh()}
+    catch(e){toast(e.message)}finally{setPending('')}
   }
   async function act(g,kind){
-    if(owner || pending)return;
-    setPending(g.id);
+    if(pending)return;setPending(g.id);
     try{
-      let result;
-      const existing=claimMap[g.id];
-      if(kind==='reserve'&&!existing) result=await db.from('gift_claims').insert({gift_id:g.id,buyer_email:myEmail,status:'reserved'});
-      else if(kind==='buy'&&existing?.buyer_email===myEmail&&existing.status==='reserved') result=await db.from('gift_claims').update({status:'purchased',purchased_at:new Date().toISOString()}).eq('gift_id',g.id).eq('buyer_email',myEmail).eq('status','reserved').select('gift_id');
-      else if(kind==='release'&&existing?.buyer_email===myEmail&&existing.status==='reserved') result=await db.from('gift_claims').delete().eq('gift_id',g.id).eq('buyer_email',myEmail);
-      else return;
-      if(result?.error)throw result.error;
-      if(kind==='buy' && !result?.data?.length)throw new Error('Achat non confirmé. Actualise la liste et réessaie.');
-      if(kind==='buy')celebrate();
-      toast(kind==='reserve'?'Cadeau réservé pour toi !':kind==='buy'?'🎉 Achat confirmé !':'Cadeau libéré !');
-    }catch(error){toast(getError(error));}
-    finally{setPending('');await refresh(myEmail,true);}
+      await api('claim',{kind,id:g.id});
+      await refresh();
+      if(kind==='buy'){
+        setConfetti(true);setTimeout(()=>setConfetti(false),3400);
+        toast('🎉 Achat confirmé ! Merci, lutin de Noël !');
+      }else toast(kind==='reserve'?'Cadeau réservé pour toi !':'Réservation annulée.');
+    }catch(e){toast(e.message);await refresh(true)}finally{setPending('')}
   }
-  const visibleGifts = gifts.filter(g=>{
-    const q=search.toLowerCase().trim();
-    if(q&&!`${g.title} ${g.description}`.toLowerCase().includes(q))return false;
-    if(owner)return true;
-    const c=claimMap[g.id];
+  const visibleGifts=gifts.filter(g=>{
+    const q=search.trim().toLowerCase();if(q&&!`${g.title} ${g.description||''}`.toLowerCase().includes(q))return false;
+    if(owner)return true;const c=claimMap[g.id];
     if(filter==='available')return !c;
     if(filter==='mine')return c?.buyer_email===myEmail;
     if(filter==='purchased')return c?.status==='purchased';
     return true;
   });
-  const mine=claims.filter(c=>c.buyer_email===myEmail);
-  const purchased=claims.filter(c=>c.status==='purchased');
-
-  if(!ready)return <div className="setup"><Gift size={48}/><h1>Le Noël de Théo</h1><p>Le projet est prêt. Il reste à relier Supabase.</p><p>Ajoute <code>VITE_SUPABASE_URL</code> et <code>VITE_SUPABASE_ANON_KEY</code> dans les variables d’environnement puis suis le README.</p></div>;
-  if(!loaded)return <div className="setup"><LoaderCircle className="spin" size={32}/>Connexion…</div>;
-  if(!session)return <div className="login-page"><div className="login-card"><span className="eyebrow">✦ Le club secret du Père Noël ✦</span><div className="big-tree">🎄</div><h1>La liste de Noël<br/><em>de Théo</em></h1><p>Une petite liste rien que pour les proches. Choisis un cadeau et garde la surprise jusqu’au 25 décembre !</p>{!sent?<form onSubmit={sendLogin}><label htmlFor="email">Ton adresse e-mail personnelle</label><div className="input-icon"><Mail size={18}/><input id="email" type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="ton@email.fr"/></div><button className="button button-primary wide" disabled={busy}>{busy?'Envoi…':'Recevoir mon lien privé →'}</button></form>:<div className="sent"><Check size={24}/><strong>Vérifie ta boîte mail !</strong><p>Un lien de connexion vient d’être envoyé à {email}. Ouvre-le sur cet appareil.</p><button className="text-button" onClick={()=>setSent(false)}>Changer d’adresse</button></div>}<small>Après la première connexion, enregistre cette page dans tes favoris : tu resteras connecté sur ce navigateur jusqu’à déconnexion ou expiration de la session.</small></div></div>;
-  if(!profile)return <div className="setup"><LockKeyhole size={36}/><h2>Accès non autorisé</h2><p>Cette adresse n’est pas dans la liste privée, ou son e-mail n’est pas encore vérifié.</p><p>Si ton adresse doit être autorisée, vérifie la table <code>family_members</code> dans Supabase.</p><button className="button" onClick={logout}>Changer de compte</button></div>;
-
-  return <div className="app-shell"><div className="snow snow1">✳</div><div className="snow snow2">✳</div><header className="topbar"><div className="brand"><span className="brand-icon">✳</span><span>LE NOËL DE <b>THÉO</b></span></div><div className="userbar"><Avatar member={profile}/><div className="usertext"><strong>{profile.display_name}</strong><span>{owner?'Créateur de la liste':'Lutin officiel'}</span></div><button type="button" className="icon-button" title="Déconnexion" onClick={logout}><LogOut size={19}/></button></div></header>
-  <main className="main"><section className="hero"><div className="hero-deco">✶ ✧ ✦</div><span className="eyebrow">NOTRE PETIT COIN DE MAGIE</span><h1>La wishlist <em>de Noël</em> <span>🎁</span></h1><p>{owner?'Ajoute toutes tes envies. Les réservations et achats des autres te restent cachés pour préserver la surprise.':'Bienvenue dans la mission cadeaux ! Choisis tes favoris, réserve-les pour toi et indique quand ils sont achetés.'}</p><div className="divider-ornament">✧ ─────────── ✧</div>
-  <div className="family"><span>{owner?'Ma liste privée':'Le comité des lutins'}</span><div className="family-avatars">{(owner?members.filter(m=>m.role==='owner'):members.filter(m=>m.role==='participant')).map(m=><div className="family-person" key={m.email}><Avatar member={m} size="large"/><small>{m.display_name}</small></div>)}</div></div></section>
-  <section className="content"><div className="section-head"><div><span className="eyebrow dark">LA HOTTE DU PÈRE NOËL</span><h2>{owner?'Mes envies':'Choisissez avec le cœur'} <span>✧</span></h2><p>{gifts.length} idée{gifts.length!==1?'s':''} de cadeaux {owner?'à partager':'à découvrir'}</p></div>{owner?<button className="button button-primary" onClick={()=>openAdd()}><Plus size={18}/> Ajouter un cadeau</button>:<div className="mini-stats"><button type="button" className="purchased-summary-trigger" onClick={()=>setPurchaseDialog(true)} disabled={!purchased.length}>🎁 Voir les achats</button><div><b>{mine.length}</b><span>Mes choix</span></div><div><b>{purchased.length}</b><span>Déjà achetés</span></div></div>}</div>
-  <div className="toolbar"><input className="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher un cadeau…" aria-label="Rechercher un cadeau"/>{!owner&&<div className="tabs">{[['all','Tous'],['available','Disponibles'],['mine','Mes choix'],['purchased','Achetés']].map(([id,label])=><button key={id} className={filter===id?'active':''} onClick={()=>setFilter(id)}>{label}</button>)}</div>}<button className="refresh" onClick={()=>refresh()} title="Actualiser"><RefreshCcw size={16}/></button></div>
-  {gifts.length===0?<div className="empty"><Gift size={42}/><h3>La hotte est encore vide</h3><p>{owner?'Ajoute le premier cadeau pour démarrer la liste !':'Théo n’a pas encore ajouté de cadeau.'}</p>{owner&&<button className="button button-primary" onClick={()=>openAdd()}>Ajouter mon premier cadeau</button>}</div>:visibleGifts.length===0?<div className="empty"><Snowflake size={38}/><h3>Aucun cadeau trouvé</h3><p>Essaie une autre recherche ou un autre filtre.</p></div>:<div className="gift-grid">{visibleGifts.map(g=>{const c=claimMap[g.id],mineClaim=c?.buyer_email===myEmail,person=peopleMap[c?.buyer_email];return <article className={`gift-card ${!owner&&c?'claimed':''}`} key={g.id}><div className={`gift-image ${!owner&&c?.status==='purchased'?'image-purchased':''}`}>{g.image_url?<img src={g.image_url} alt={g.title} loading="lazy" onError={e=>{e.currentTarget.style.display='none';}}/>:<div className="image-placeholder">🎁</div>}<span className="priority">{g.priority==='coup_de_coeur'?'♥ Coup de cœur':g.priority==='idee'?'✧ Une idée':'✦ Très envie'}</span>{!owner&&c&&<div className={`claim-chip ${c.status==='purchased'?'bought':''}`}>{c.status==='purchased'?<Check size={13}/>:<LockKeyhole size={13}/>} {c.status==='purchased'?'Acheté':'Réservé'}</div>}</div><div className="gift-body"><div className="gift-title-row"><h3>{g.title}</h3>{g.price_eur!=null&&<span className="price">{Number(g.price_eur).toLocaleString('fr-FR',{style:'currency',currency:'EUR',maximumFractionDigits:2})}</span>}</div>{g.description&&<p className="description">{g.description}</p>}{g.product_url&&<a className="product-link" href={g.product_url} target="_blank" rel="noreferrer">Voir ce cadeau <ExternalLink size={14}/></a>}
-  {!owner&&c&&<div className="claim-info"><Avatar member={person||{display_name:c.buyer_email}}/><div><strong>{mineClaim?'C’est ton choix !':`${person?.display_name||'Un lutin'} s’en occupe`}</strong><span>{c.status==='purchased'?'Cadeau déjà acheté':'Cadeau réservé exclusivement'}</span></div></div>}
-  <div className="card-actions">{owner?<><button className="button button-light" onClick={()=>openAdd(g)}><Pencil size={16}/> Modifier</button><button className="button button-icon-danger" disabled={pending===g.id} title="Supprimer" onClick={()=>removeGift(g)}><Trash2 size={16}/></button></>:!c?<button type="button" className="button button-primary wide" disabled={!!pending} onClick={()=>act(g,'reserve')}><Heart size={17}/> Réserver ce cadeau</button>:mineClaim?<><button type="button" className={`button wide ${c.status==='purchased'?'button-done':'button-primary'}`} disabled={!!pending||c.status==='purchased'} onClick={()=>act(g,'buy')}>{c.status==='purchased'?<><Check size={17}/> Achat confirmé</>:<><ShoppingBag size={17}/> Je l’ai acheté</>}</button><button type="button" className="button button-light" disabled={!!pending||c.status==='purchased'} onClick={()=>act(g,'release')} title="Libérer ce cadeau"><Undo2 size={16}/></button></>:<button className="button button-disabled wide" disabled><LockKeyhole size={16}/> Indisponible</button>}</div></div></article>;})}</div>}
-  <div className="footer-note"><Sparkles size={17}/>{owner?'La magie reste intacte : les informations de réservation ne sont pas accessibles à ton compte.':'Une réservation bloque immédiatement le cadeau pour tout le monde. Tu peux la libérer à tout moment.'}</div></section></main><footer>Fait avec ♥ pour Noël · Édition 2026</footer>
-  <Confetti pieces={confetti}/>
-  {!owner&&purchased.length>0&&purchaseDialog&&<div className="purchases-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPurchaseDialog(false)}}><section className="purchases-dialog" role="dialog" aria-modal="true" aria-labelledby="purchase-title"><div className="purchase-dialog-icon">🎁</div><span className="eyebrow dark">LES CADEAUX DÉJÀ TROUVÉS</span><h2 id="purchase-title">La magie est en marche !</h2><p>Voici les cadeaux déjà achetés. Ils restent visibles par Laurine, Maman et Dino, et cachés pour Théo.</p><div className="purchased-items">{purchased.map(c=>{const g=gifts.find(x=>x.id===c.gift_id),person=peopleMap[c.buyer_email];if(!g)return null;return <div className="purchased-item" key={c.gift_id}>{g.image_url?<img src={g.image_url} alt=""/>:<span>🎁</span>}<div><strong>{g.title}</strong><small>Acheté par {person?.display_name||'un lutin'}</small></div><Check size={19}/></div>;})}</div><button type="button" className="button button-primary wide" onClick={()=>setPurchaseDialog(false)}>Découvrir toute la liste ✨</button></section></div>}
-  {notice&&<div className="toast" role="status"><AlertCircle size={17}/>{notice}<button onClick={()=>setNotice('')} aria-label="Fermer"><X size={15}/></button></div>}
-  {modal&&owner&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><div className="modal" role="dialog" aria-modal="true" aria-label="Cadeau"><div className="modal-head"><h2>{editing?'Modifier le cadeau':'Une nouvelle envie ✨'}</h2><button className="icon-button" onClick={()=>setModal(false)}><X size={20}/></button></div><form onSubmit={saveGift}><label>Nom du cadeau *</label><input required maxLength={140} value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Ex. Une montre Garmin"/><label>Une petite description</label><textarea rows={3} value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Taille, couleur, modèle, détails…"/><label>Lien vers le produit</label><input type="url" value={form.product_url||''} onChange={e=>setForm({...form,product_url:e.target.value})} placeholder="https://…"/><label>URL d’une photo</label><input type="url" value={form.image_url||''} onChange={e=>setForm({...form,image_url:e.target.value})} placeholder="https://…/photo.jpg"/><div className="form-split"><div><label>Prix indicatif (€)</label><input type="number" min="0" step="0.01" value={form.price_eur??''} onChange={e=>setForm({...form,price_eur:e.target.value})} placeholder="45"/></div><div><label>Envie</label><select value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}>{priorities.map(p=><option key={p.value} value={p.value}>{p.label}</option>)}</select></div></div><button className="button button-primary wide" disabled={saveBusy}>{saveBusy?'Enregistrement…':editing?'Enregistrer les modifications':'Ajouter à ma liste'}</button></form></div></div>}
+  const loading=<div className="setup"><LoaderCircle className="spin" size={34}/> Chargement de Noël…</div>;
+  if(!loaded)return loading;
+  if(!profileId)return <div className="login-page"><div className="login-card avatar-login">
+    <span className="eyebrow">✦ LE CLUB SECRET DU PÈRE NOËL ✦</span><div className="big-tree">🎄</div>
+    <h1>La liste de Noël<br/><em>de Théo</em></h1><p>Qui vient préparer les surprises ?</p>
+    <div className="profile-picker">{PROFILES.map(p=><button type="button" className="profile-choice" key={p.id} onClick={()=>login(p.id)} disabled={busy}>
+      <Avatar person={p} size="picker"/><strong>{p.name}</strong>{p.locked?<small>🔒 Code requis</small>:<small>Entrer dans la liste</small>}
+    </button>)}</div>
+    <small>Le profil sélectionné reste enregistré sur cet appareil.</small>
+    {chosen==='theo'&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setChosen(null)}}><div className="modal pin-modal" role="dialog" aria-modal="true"><div className="modal-head"><h2>🔒 Espace Théo</h2><button type="button" className="icon-button" onClick={()=>setChosen(null)} aria-label="Fermer"><X size={20}/></button></div><form onSubmit={loginOwner}><label htmlFor="pin">Ton code personnel</label><input id="pin" autoFocus required type="password" inputMode="numeric" autoComplete="off" minLength={4} maxLength={8} value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,''))} placeholder="••••"/><button className="button button-primary wide" type="submit" disabled={busy}>{busy?'Vérification…':'Ouvrir ma liste'}</button></form></div></div>}
+    {notice&&<div className="toast"><AlertCircle size={16}/>{notice}<button onClick={()=>setNotice('')} aria-label="Fermer"><X size={14}/></button></div>}
+  </div></div>;
+  return <div className="app-shell"><Confetti show={confetti}/><div className="snow snow1">✳</div><div className="snow snow2">✳</div>
+    <header className="topbar"><div className="brand"><span className="brand-icon">✳</span>LE NOËL DE <b>THÉO</b></div><div className="userbar"><Avatar person={person}/><div className="usertext"><strong>{person?.name}</strong><span>{owner?'Créateur de la liste':'Lutin officiel'}</span></div><button className="icon-button" onClick={logout} title="Changer de profil" aria-label="Changer de profil"><LogOut size={19}/></button></div></header>
+    <main className="main"><section className="hero"><div className="hero-deco">✶ ✧ ✦</div><span className="eyebrow">NOTRE PETIT COIN DE MAGIE</span><h1>La wishlist <em>de Noël</em> 🎁</h1><p>{owner?'Ajoute tes envies à tout moment. Les achats et réservations ne figurent pas dans ton espace.':'Réserve un cadeau pour toi, puis confirme son achat. Les autres lutins verront immédiatement son statut.'}</p><div className="divider-ornament">✧ ─────────── ✧</div><div className="family"><span>{owner?'Mon espace':'Le comité des lutins'}</span><div className="family-avatars">{(owner?PROFILES.filter(p=>p.id==='theo'):PROFILES.filter(p=>p.id!=='theo')).map(p=><div className="family-person" key={p.id}><Avatar person={p} size="large"/><small>{p.name}</small></div>)}</div></div></section>
+    <section className="content"><div className="section-head"><div><span className="eyebrow dark">LA HOTTE DU PÈRE NOËL</span><h2>{owner?'Mes envies':'Choisissez avec le cœur'} ✧</h2><p>{gifts.length} cadeau{gifts.length===1?'':'x'} dans la liste</p></div>
+      {owner?<button className="button button-primary" onClick={()=>openAdd()}><Plus size={18}/> Ajouter un cadeau</button>:<div className="mini-stats"><button type="button" onClick={()=>setFilter('mine')}><b>{mine.length}</b><span>Mes choix</span></button><button type="button" onClick={()=>setSummary(true)}><b>{purchased.length}</b><span>Déjà achetés</span></button></div>}</div>
+    <div className="toolbar"><input className="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher un cadeau…" aria-label="Rechercher un cadeau"/>{!owner&&<div className="tabs">{[['all','Tous'],['available','Disponibles'],['mine','Mes choix'],['purchased','Achetés']].map(([key,label])=><button key={key} className={filter===key?'active':''} onClick={()=>setFilter(key)}>{label}</button>)}</div>}<button className="refresh" title="Actualiser" onClick={()=>refresh()}><RefreshCcw size={16}/></button></div>
+    {visibleGifts.length===0?<div className="empty"><Gift size={42}/><h3>{gifts.length?'Aucun cadeau trouvé':'La hotte est encore vide'}</h3><p>{owner?'Ajoute ton prochain cadeau !':'Regarde un autre filtre ou reviens plus tard.'}</p></div>:<div className="gift-grid">{visibleGifts.map(g=>{const c=claimMap[g.id],isMine=c?.buyer_email===myEmail,who=peopleMap[c?.buyer_email],bought=!owner&&c?.status==='purchased';return <article key={g.id} className={`gift-card ${bought?'purchased-card':''}`}><div className="gift-image">{g.image_url?<img src={g.image_url} alt={g.title} loading="lazy" onError={e=>{e.currentTarget.style.visibility='hidden'}}/>:<div className="image-placeholder">🎁</div>}<span className="priority">{g.priority==='coup_de_coeur'?'♥ Coup de cœur':g.priority==='idee'?'✧ Une idée':'✦ Très envie'}</span>{!owner&&c&&<span className={`claim-chip ${bought?'bought':''}`}>{bought?'✓ Acheté':'🔒 Réservé'}</span>}</div><div className="gift-body"><div className="gift-title-row"><h3>{g.title}</h3>{g.price_eur!==null&&g.price_eur!==undefined&&<span className="price">{Number(g.price_eur).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})}</span>}</div>{g.description&&<p className="description">{g.description}</p>}{g.product_url&&<a className="product-link" href={g.product_url} target="_blank" rel="noreferrer">Voir le cadeau <ExternalLink size={14}/></a>}
+    {!owner&&c&&<div className="claim-info"><Avatar person={who||{name:'Un lutin'}}/><div><strong>{isMine?'Ton cadeau':`${who?.display_name||'Un lutin'} s’en occupe`}</strong><span>{bought?'Cadeau acheté':'Réservation exclusive'}</span></div></div>}
+    <div className="card-actions">{owner?<><button className="button button-light" onClick={()=>openAdd(g)}><Pencil size={16}/> Modifier</button><button className="button button-icon-danger" onClick={()=>removeGift(g)} disabled={pending===g.id} aria-label="Supprimer"><Trash2 size={16}/></button></>:!c?<button className="button button-primary wide" onClick={()=>act(g,'reserve')} disabled={pending===g.id}><Heart size={17}/> Réserver ce cadeau</button>:bought?<button className="button button-done wide" disabled><Check size={17}/> Acheté par {who?.display_name||'un lutin'}</button>:isMine?<><button className="button button-primary wide" onClick={()=>act(g,'buy')} disabled={pending===g.id}><ShoppingBag size={17}/> Je l’ai acheté</button><button className="button button-light" onClick={()=>act(g,'release')} disabled={pending===g.id} title="Annuler la réservation"><Undo2 size={16}/></button></>:<button className="button button-disabled wide" disabled><LockKeyhole size={16}/> Réservé par {who?.display_name||'un lutin'}</button>}</div></div></article>})}</div>}
+    <div className="footer-note"><Sparkles size={17}/>{owner?'Tu peux compléter ta liste même après avoir envoyé le lien.':'La réservation est exclusive et les achats sont visibles par tous les lutins.'}</div></section></main><footer>Fait avec ♥ pour Noël · Édition 2026</footer>
+    {modal&&owner&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setModal(false)}}><div className="modal" role="dialog" aria-modal="true"><div className="modal-head"><h2>{editing?'Modifier un cadeau':'Une nouvelle envie ✨'}</h2><button className="icon-button" onClick={()=>setModal(false)} aria-label="Fermer"><X size={20}/></button></div><form onSubmit={saveGift}><label>Nom du cadeau *</label><input required maxLength={140} value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Une montre Garmin"/><label>Une petite description</label><textarea rows={3} value={form.description||''} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Taille, couleur, détails…"/><label>Lien vers le produit</label><input type="url" value={form.product_url||''} onChange={e=>setForm({...form,product_url:e.target.value})} placeholder="https://…"/><label>URL d’une photo</label><input value={form.image_url||''} onChange={e=>setForm({...form,image_url:e.target.value})} placeholder="/gifts/photo.webp"/><div className="form-split"><div><label>Prix indicatif (€)</label><input type="number" min="0" step="0.01" value={form.price_eur??''} onChange={e=>setForm({...form,price_eur:e.target.value})}/></div><div><label>Priorité</label><select value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})}>{priorityOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div></div><button type="submit" className="button button-primary wide" disabled={busy}>{busy?'Enregistrement…':editing?'Sauvegarder':'Ajouter à la liste'}</button></form></div></div>}
+    {summary&&!owner&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setSummary(false)}}><div className="modal summary-modal" role="dialog" aria-modal="true" aria-label="Cadeaux achetés"><div className="modal-head"><h2>🎁 Déjà sous le sapin !</h2><button className="icon-button" onClick={()=>setSummary(false)} aria-label="Fermer"><X size={20}/></button></div><p>Les achats déjà confirmés par les lutins.</p>{purchased.length===0?<p>Aucun achat confirmé pour le moment.</p>:purchased.map(c=>{const g=gifts.find(x=>x.id===c.gift_id),who=peopleMap[c.buyer_email];return <div className="summary-item" key={c.gift_id}>{g?.image_url?<img src={g.image_url} alt=""/>:<div className="summary-emoji">🎁</div>}<div><strong>{g?.title||'Cadeau'}</strong><small>Acheté par {who?.display_name||'un lutin'}</small></div><Check size={18}/></div>})}<button className="button button-primary wide" onClick={()=>setSummary(false)}>Voir toute la liste ✨</button></div></div>}
+    {notice&&<div className="toast" role="status"><AlertCircle size={17}/>{notice}<button onClick={()=>setNotice('')} aria-label="Fermer"><X size={15}/></button></div>}
   </div>;
 }
-
 createRoot(document.getElementById('root')).render(<App/>);
