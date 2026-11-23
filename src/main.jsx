@@ -88,7 +88,7 @@ function App(){
     catch(e){toast(e.message)}finally{setBusy(false)}
   }
   async function logout(){
-    setBusy(true);try{await api('logout');setProfileId(null);setSummary(false);setSummarySeen(false)}catch(e){toast(e.message)}finally{setBusy(false)}
+    setBusy(true);try{await api('logout', {});setProfileId(null);setSummary(false);setSummarySeen(false)}catch(e){toast(e.message)}finally{setBusy(false)}
   }
   function openAdd(item){setEditing(item?.id||null);setForm(item?{...item,price_eur:item.price_eur??''}:{...emptyGift});setModal(true)}
   async function saveGift(e){
