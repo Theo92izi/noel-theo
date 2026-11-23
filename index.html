@@ -1,57 +1,72 @@
-<!doctype html><html lang="fr"><head>
-<link rel="icon" type="image/png" href="/favicon.png">
-<link rel="shortcut icon" href="/favicon.ico">
-<link rel="apple-touch-icon" href="/favicon.png">
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#132c25"/><meta name="description" content="La liste de Noël privée de Théo"/><title>Le Noël de Théo 🎄</title>
-/* LISTE DE NOËL — GRILLE COMPACTE */
 
-/* 4 cadeaux par ligne sur ordinateur */
-.gifts-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#132c25" />
+  <meta name="description" content="La liste de Noël privée de Théo" />
 
-/* Cartes plus compactes */
-.gift-card {
-  min-width: 0;
-  overflow: hidden;
-  border-radius: 16px;
-}
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/favicon.png" />
 
-/* Images entièrement visibles */
-.gift-card img {
-  width: 100%;
-  height: 170px;
-  object-fit: contain;
-  object-position: center;
-}
+  <title>Le Noël de Théo 🎄</title>
 
-/* Espacement du contenu */
-.gift-card-content {
-  padding: 12px;
-}
+  <style>
+    /* Grille de cadeaux */
+    .gifts-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
 
-/* Tablette : 3 colonnes */
-@media (max-width: 1100px) {
-  .gifts-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
+    /* Cartes compactes */
+    .gift-card {
+      min-width: 0;
+      overflow: hidden;
+      border-radius: 16px;
+    }
 
-/* Mobile : 2 colonnes */
-@media (max-width: 650px) {
-  .gifts-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-  }
+    /* Photos entièrement visibles */
+    .gift-card img {
+      width: 100%;
+      height: 170px;
+      object-fit: contain;
+      object-position: center;
+    }
 
-  .gift-card img {
-    height: 135px;
-  }
+    .gift-card-content {
+      padding: 12px;
+    }
 
-  .gift-card-content {
-    padding: 10px;
-  }
-}
-</head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>
+    /* Tablette */
+    @media (max-width: 1100px) {
+      .gifts-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    /* Mobile */
+    @media (max-width: 650px) {
+      .gifts-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .gift-card img {
+        height: 135px;
+      }
+
+      .gift-card-content {
+        padding: 10px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>
