@@ -67,10 +67,23 @@ export default async function handler(req,res) {
     const host=req.headers['x-forwarded-host']||req.headers.host;
     if (!origin || !host || new URL(origin).host!==host) return fail(res,403,'Origine non autorisée');
   }
+
+  // Autoriser le changement de profil sans dépendre de Supabase
+  if (action === 'logout' && req.method === 'POST') {
+    cookie(res, '', 0);
+    return res.status(200).json({ ok: true });
+  }
+
   let db;
-  try {db=dbClient();} catch(e) {return fail(res,503,e.message);}
   try {
-    const profile=readSession(req);
+    db = dbClient();
+  } catch (e) {
+    return fail(res, 503, e.message);
+  }
+
+  try {
+    const profile = readSession(req);
+
     if (action==='profiles' && req.method==='GET') {
       return res.status(200).json({profiles:[
         {id:'theo',name:'Théo',avatar:AVATARS.theo,locked:true},
