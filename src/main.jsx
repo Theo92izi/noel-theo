@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Gift, Plus, LogOut, Heart, LockKeyhole, Check, ShoppingBag, Undo2, ExternalLink, Pencil, Trash2, Sparkles, X, LoaderCircle, AlertCircle, RefreshCcw, Snowflake, PartyPopper } from 'lucide-react';
 import './styles.css';
+import Magic,{magicEnabled} from './Magic.jsx';
 
 const PROFILES = [
   {id:'theo',name:'Théo',avatar:'/favicon.png',locked:true},
@@ -45,6 +46,7 @@ function Confetti({show}){
   return <div className="confetti-layer" aria-hidden="true">{bits.map((b,i)=><span key={i} style={{left:`${b.x}%`,animationDelay:`${b.delay}ms`,animationDuration:`${b.dur}ms`}}>{b.icon}</span>)}</div>;
 }
 function App(){
+  const [magicEvent,setMagicEvent]=useState(null);
   const [profileId,setProfileId]=useState(null),[loaded,setLoaded]=useState(false);
   const [chosen,setChosen]=useState(null),[pin,setPin]=useState('');
   const [busy,setBusy]=useState(false),[pending,setPending]=useState(''),[notice,setNotice]=useState('');
@@ -59,7 +61,7 @@ function App(){
   useEffect(()=>{let active=true; api('session').then(x=>{if(active)setProfileId(x.profile||null)}).catch(e=>{if(active)toast(e.message)}).finally(()=>{if(active)setLoaded(true)});return ()=>{active=false}},[]);
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),5500);return ()=>clearTimeout(t)},[notice]);
   async function refresh(silent=false){
-    try{const data=await api('data');setGifts(data.gifts||[]);setMembers(data.members||[]);setClaims(data.claims||[])}
+    try{const data=await api('data');setGifts(data.gifts||[]);setMembers(data.members||[]);setClaims(data.claims||[]);return data}
     catch(e){if(!silent)toast(e.message)}
   }
   useEffect(()=>{
@@ -88,7 +90,7 @@ function App(){
     catch(e){toast(e.message)}finally{setBusy(false)}
   }
   async function logout(){
-    setBusy(true);try{await api('logout', {});setProfileId(null);setSummary(false);setSummarySeen(false)}catch(e){toast(e.message)}finally{setBusy(false)}
+    setBusy(true);try{await api('logout', {});setProfileId(null);setMagicEvent(null);setSummary(false);setSummarySeen(false)}catch(e){toast(e.message)}finally{setBusy(false)}
   }
   function openAdd(item){setEditing(item?.id||null);setForm(item?{...item,price_eur:item.price_eur??''}:{...emptyGift});setModal(true)}
   async function saveGift(e){
@@ -105,9 +107,10 @@ function App(){
     if(pending)return;setPending(g.id);
     try{
       await api('claim',{kind,id:g.id});
-      await refresh();
+      const refreshed=await refresh();
       if(kind==='buy'){
-        setConfetti(true);setTimeout(()=>setConfetti(false),3400);
+        if(magicEnabled(profileId)&&refreshed){const count=(refreshed.claims||[]).filter(c=>c.buyer_email===myEmail&&c.status==='purchased').length;if(count>0)setMagicEvent({level:Math.min(count,4),profile:profileId});}
+        else {setConfetti(true);setTimeout(()=>setConfetti(false),3400);}
         toast('🎉 Achat confirmé ! Merci, lutin de Noël !');
       }else toast(kind==='reserve'?'Cadeau réservé pour toi !':'Réservation annulée.');
     }catch(e){toast(e.message);await refresh(true)}finally{setPending('')}
@@ -135,7 +138,7 @@ function App(){
   return <div className="app-shell"><Confetti show={confetti}/><div className="snow snow1">✳</div><div className="snow snow2">✳</div>
     <header className="topbar"><div className="brand"><span className="brand-icon">✳</span>LE NOËL DE <b>THÉO</b></div><div className="userbar"><Avatar person={person}/><div className="usertext"><strong>{person?.name}</strong><span>{owner?'Créateur de la liste':'Lutin officiel'}</span></div><button className="icon-button" onClick={logout} title="Changer de profil" aria-label="Changer de profil"><LogOut size={19}/></button></div></header>
     <main className="main"><section className="hero"><div className="hero-deco">✶ ✧ ✦</div><span className="eyebrow">NOTRE PETIT COIN DE MAGIE</span><h1>La wishlist <em>de Noël</em> 🎁</h1><p>{owner?'Ajoute tes envies à tout moment. Les achats et réservations ne figurent pas dans ton espace.':'Réserve un cadeau pour toi, puis confirme son achat. Les autres lutins verront immédiatement son statut.'}</p><div className="divider-ornament">✧ ─────────── ✧</div><div className="family"><span>{owner?'Mon espace':'Le comité des lutins'}</span><div className="family-avatars">{(owner?PROFILES.filter(p=>p.id==='theo'):PROFILES.filter(p=>p.id!=='theo')).map(p=><div className="family-person" key={p.id}><Avatar person={p} size="large"/><small>{p.name}</small></div>)}</div></div></section>
-    <section className="content"><div className="section-head"><div><span className="eyebrow dark">LA HOTTE DU PÈRE NOËL</span><h2>{owner?'Mes envies':'Choisissez avec le cœur'} ✧</h2><p>{gifts.length} cadeau{gifts.length===1?'':'x'} dans la liste</p></div>
+    <section className="content">{magicEnabled(profileId)&&<Magic key={profileId} id={profileId} count={mine.filter(c=>c.status==='purchased').length} event={magicEvent?.profile===profileId?magicEvent:null}/>}<div className="section-head"><div><span className="eyebrow dark">LA HOTTE DU PÈRE NOËL</span><h2>{owner?'Mes envies':'Choisissez avec le cœur'} ✧</h2><p>{gifts.length} cadeau{gifts.length===1?'':'x'} dans la liste</p></div>
       {owner?<button className="button button-primary" onClick={()=>openAdd()}><Plus size={18}/> Ajouter un cadeau</button>:<div className="mini-stats"><button type="button" onClick={()=>setFilter('mine')}><b>{mine.length}</b><span>Mes choix</span></button><button type="button" onClick={()=>setSummary(true)}><b>{purchased.length}</b><span>Déjà achetés</span></button></div>}</div>
     <div className="toolbar"><input className="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Rechercher un cadeau…" aria-label="Rechercher un cadeau"/>{!owner&&<div className="tabs">{[['all','Tous'],['available','Disponibles'],['mine','Mes choix'],['purchased','Achetés']].map(([key,label])=><button key={key} className={filter===key?'active':''} onClick={()=>setFilter(key)}>{label}</button>)}</div>}<button className="refresh" title="Actualiser" onClick={()=>refresh()}><RefreshCcw size={16}/></button></div>
     {visibleGifts.length===0?<div className="empty"><Gift size={42}/><h3>{gifts.length?'Aucun cadeau trouvé':'La hotte est encore vide'}</h3><p>{owner?'Ajoute ton prochain cadeau !':'Regarde un autre filtre ou reviens plus tard.'}</p></div>:<div className="gift-grid">{visibleGifts.map(g=>{const c=claimMap[g.id],isMine=c?.buyer_email===myEmail,who=peopleMap[c?.buyer_email],bought=!owner&&c?.status==='purchased';return <article key={g.id} className={`gift-card ${bought?'purchased-card':''}`}><div className="gift-image">{g.image_url?<img src={g.image_url} alt={g.title} loading="lazy" onError={e=>{e.currentTarget.style.visibility='hidden'}}/>:<div className="image-placeholder">🎁</div>}<span className="priority">{g.priority==='coup_de_coeur'?'♥ Coup de cœur':g.priority==='idee'?'✧ Une idée':'✦ Très envie'}</span>{!owner&&c&&<span className={`claim-chip ${bought?'bought':''}`}>{bought?'✓ Acheté':'🔒 Réservé'}</span>}</div><div className="gift-body"><div className="gift-title-row"><h3>{g.title}</h3>{g.price_eur!==null&&g.price_eur!==undefined&&<span className="price">{Number(g.price_eur).toLocaleString('fr-FR',{style:'currency',currency:'EUR'})}</span>}</div>{g.description&&<p className="description">{g.description}</p>}{g.product_url&&<a className="product-link" href={g.product_url} target="_blank" rel="noreferrer">Voir le cadeau <ExternalLink size={14}/></a>}
